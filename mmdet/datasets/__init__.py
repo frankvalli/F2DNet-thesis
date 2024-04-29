@@ -10,6 +10,7 @@ from .extra_aug import ExtraAugmentation
 from .registry import DATASETS
 from .builder import build_dataset
 from .coco_csp_ori import CocoCSPORIDataset
+from .coco_csp_vis import CocoCSPVisDataset
 from .ecp_coco import ECPCocoDataset
 from .backend import ZipBackend
 
@@ -19,5 +20,5 @@ __all__ = [
     'DistributedGroupSampler', 'build_dataloader', 'to_tensor', 'random_scale',
     'show_ann', 'ConcatDataset', 'RepeatDataset', 'ExtraAugmentation',
     'WIDERFaceDataset', 'DATASETS', 'build_dataset', 'CocoCSPORIDataset',
-    'ZipBackend'
+    'CocoCSPVisDataset', 'ZipBackend'
 ]

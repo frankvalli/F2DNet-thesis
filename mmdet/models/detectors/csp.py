@@ -195,6 +195,7 @@ class CSP(SingleStageDetector):
                       img_metas,
                       gt_bboxes,
                       gt_labels,
+                      gt_vis_bboxes=None,
                       gt_bboxes_ignore=None,
                       classification_maps=None,
                       scale_maps=None,
@@ -205,6 +206,8 @@ class CSP(SingleStageDetector):
             img_metas=img_metas[0]
             gt_bboxes=gt_bboxes[0]
             gt_labels=gt_labels[0]
+            if gt_vis_bboxes is not None:
+                gt_vis_bboxes=gt_vis_bboxes[0]
             gt_bboxes_ignore = gt_bboxes_ignore[0]
             classification_maps = classification_maps[0]
             scale_maps = scale_maps[0]
@@ -260,7 +263,11 @@ class CSP(SingleStageDetector):
 
             samp_list = [res.bboxes for res in sampling_results]
             if len(samp_list) == 0:
-                losses.update(dict(loss_refine_cls=torch.tensor(0).float().cuda(), acc=torch.tensor(0).float().cuda()))
+                if gt_vis_bboxes is not None:
+                    losses.update(dict(loss_refine_cls=torch.tensor(0).float().cuda(), loss_refine_bbox=torch.tensor(0).float().cuda(),
+                                        acc=torch.tensor(0).float().cuda()))
+                else:
+                    losses.update(dict(loss_refine_cls=torch.tensor(0).float().cuda(), acc=torch.tensor(0).float().cuda()))
                 return losses
             rois = bbox2roi(samp_list).float()
             if self.refine_head.loss_opinion is not None:
@@ -269,16 +276,30 @@ class CSP(SingleStageDetector):
                 pred_feats = self.refine_roi_extractor(
                     x, pred_rois)
                 pred_scores_refine = self.refine_head(pred_feats)
+                if type(pred_scores_refine) == tuple:
+                    pred_scores_refine = pred_scores_refine[0]
                 loss_opinion = self.refine_head.compute_opinion_loss(pred_scores, pred_scores_refine)
                 losses.update(loss_opinion)
             bbox_feats = self.refine_roi_extractor(
                 x, rois)
-            cls_score = self.refine_head(bbox_feats)
-            bbox_targets = self.refine_head.get_target(
-                sampling_results, gt_bboxes, gt_labels, self.train_cfg.rcnn)
-            loss_refine = self.refine_head.loss(cls_score,
+            out = self.refine_head(bbox_feats)
+            if gt_vis_bboxes is not None:
+                bbox_targets = self.refine_head.get_target(
+                    sampling_results, gt_vis_bboxes, gt_labels, self.train_cfg.rcnn)
+            else:
+                bbox_targets = self.refine_head.get_target(
+                    sampling_results, gt_bboxes, gt_labels, self.train_cfg.rcnn)
+            if type(out) == tuple:
+                cls_score, bbox_pred = out
+                loss_refine = self.refine_head.loss(cls_score, *bbox_targets[:2], bbox_pred,
+                                                *bbox_targets[2:])
+                losses.update(dict(loss_refine_cls=loss_refine["loss_cls"], loss_refine_bbox=loss_refine["loss_bbox"],
+                                distL1=loss_refine["dist"]))
+            else:
+                cls_score = out
+                loss_refine = self.refine_head.loss(cls_score,
                                             *bbox_targets[:2])
-            losses.update(dict(loss_refine_cls=loss_refine["loss_cls"], distL1=loss_refine["dist"]))
+                losses.update(dict(loss_refine_cls=loss_refine["loss_cls"], distL1=loss_refine["dist"]))
 
         return losses
 

@@ -19,6 +19,7 @@ class RefineHead(BBoxHead):
     def __init__(self,
                  num_cls_convs=2,
                  num_cls_fcs=2,
+                 with_reg=False,
                  use_gm=True,
                  conv_out_channels=256,
                  fc_out_channels=1024,
@@ -27,6 +28,8 @@ class RefineHead(BBoxHead):
                  loss_opinion=None,
                  alpha=0.5,
                  num_classes=1,
+                 target_means=[0., 0., 0., 0.],
+                 target_stds=[0.1, 0.1, 0.2, 0.2],
                  weight_decay=0.0005,
                  dropout_prob=-1,
                  *args,
@@ -34,6 +37,7 @@ class RefineHead(BBoxHead):
         super(RefineHead, self).__init__(*args, num_classes=num_classes, with_reg=False, **kwargs)
         assert (num_cls_convs + num_cls_fcs > 0)
 
+        self.with_reg = with_reg
         self.alpha = alpha
         self.use_gm = use_gm
         self.dropout_prob = dropout_prob
@@ -53,6 +57,9 @@ class RefineHead(BBoxHead):
         self.relu = nn.LeakyReLU(0.2, inplace=True)
         # reconstruct fc_cls and fc_reg since input channels are changed
         self.fc_cls = nn.Linear(self.cls_last_dim, self.num_classes)
+        if self.with_reg:
+            out_dim_reg = 4 if self.reg_class_agnostic else 4 * self.num_classes
+            self.fc_reg = nn.Linear(self.cls_last_dim, out_dim_reg)
 
     def _add_conv_fc_branch(self,
                             num_branch_convs,
@@ -113,6 +120,9 @@ class RefineHead(BBoxHead):
              cls_score,
              labels,
              label_weights,
+             bbox_pred=None,
+             bbox_targets=None,
+             bbox_weights=None,
              reduction_override=None, **kwargs):
         losses = dict()
         if cls_score is not None:
@@ -128,6 +138,15 @@ class RefineHead(BBoxHead):
                 reg_loss += param.square().sum()
             losses['loss_cls'] += self.reg_lambda * reg_loss
             losses['dist'] = nn.L1Loss(reduction='mean')(cls_score, labels)
+        if bbox_pred is not None:
+            pos_inds = labels > 0
+            pos_bbox_pred = bbox_pred.view(bbox_pred.size(0), 4)[pos_inds]
+            losses['loss_bbox'] = self.loss_bbox(
+                pos_bbox_pred,
+                bbox_targets[pos_inds],
+                bbox_weights[pos_inds],
+                avg_factor=bbox_targets.size(0),
+                reduction_override=reduction_override)
         return losses
 
     def forward(self, x):
@@ -141,13 +160,24 @@ class RefineHead(BBoxHead):
             x_cls = self.relu(fc(x_cls))
 
         cls_score = self.fc_cls(x_cls)
-        if self.num_classes > 1:
-            return cls_score
-        return cls_score.view(-1)
+        if self.with_reg:
+            bbox_pred = self.fc_reg(x_cls)
+            if self.num_classes > 1:
+                return cls_score, bbox_pred
+            else:
+                return cls_score.view(-1), bbox_pred
+        else:
+            if self.num_classes > 1:
+                return cls_score
+            else:
+                return cls_score.view(-1)
 
     def get_scores(self, x):
 
         cls_score = self.forward(x)
+        if type(cls_score) == tuple:
+            cls_score = cls_score[0]
+
         if cls_score.dim() > 1:
             return F.softmax(cls_score, dim=1)
         return F.sigmoid(cls_score)
