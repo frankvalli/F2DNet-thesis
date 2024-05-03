@@ -327,7 +327,7 @@ class CSPHead(nn.Module):
             0, w * stride, stride, dtype=dtype, device=device)
         y_range = torch.arange(
             0, h * stride, stride, dtype=dtype, device=device)
-        y, x = torch.meshgrid(y_range, x_range)
+        y, x = torch.meshgrid(y_range, x_range, indexing="ij")
         points = torch.stack(
             (x.reshape(-1), y.reshape(-1)), dim=-1) + stride // 2
         return points

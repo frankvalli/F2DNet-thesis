@@ -29,7 +29,7 @@ class KLDivLoss(nn.Module):
                 reduction_override=None,
                 **kwargs):
         assert reduction_override in (None, 'none', 'mean', 'sum')
-        cls_score = F.sigmoid(cls_score)
+        cls_score = torch.sigmoid(cls_score)
         reduction = (
             reduction_override if reduction_override else self.reduction)
         loss_cls = self.loss_weight * self.criterion(

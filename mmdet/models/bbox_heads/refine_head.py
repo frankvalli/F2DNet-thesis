@@ -180,7 +180,7 @@ class RefineHead(BBoxHead):
 
         if cls_score.dim() > 1:
             return F.softmax(cls_score, dim=1)
-        return F.sigmoid(cls_score)
+        return torch.sigmoid(cls_score)
 
     def suppress_boxes(self, rois, scores, img_meta=None, cfg=None):
         img_shape = img_meta[0]['img_shape']
