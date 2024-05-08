@@ -5,7 +5,6 @@ import shutil
 import tempfile
 import json
 import time
-import numpy as np
 
 import mmcv
 import torch
@@ -29,7 +28,7 @@ def single_gpu_test(model, data_loader, show=False, save_img=False, save_img_dir
     for i, data in enumerate(data_loader):
         with torch.no_grad():
             result = model(return_loss=False, rescale=not show, **data)
-        results.append(result[0][0])
+        results.append(result)
 
         if show:
             model.module.show_result(data, result, dataset.img_norm_cfg, save_result=save_img, result_name=save_img_dir + '/' + str(i)+'.jpg')
@@ -204,9 +203,7 @@ def main():
             boxes=boxes[0]
             if type(boxes) == list:
                 boxes = boxes[0]
-            boxes = np.array(boxes)
-            boxes[:, 2] -= boxes[:, 0]
-            boxes[:, 3] -= boxes[:, 1]
+            boxes[:, [2, 3]] -= boxes[:, [0, 1]]
             if len(boxes) > 0:
                 for box in boxes:
                     # box[:4] = box[:4] / 0.6
