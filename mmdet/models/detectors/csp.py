@@ -30,6 +30,7 @@ class CSP(SingleStageDetector):
             self.refine_roi_extractor = builder.build_roi_extractor(
                 refine_roi_extractor)
             self.refine_head = builder.build_head(refine_head)
+            self.refine_head.init_weights()
         self.return_feature_maps = return_feature_maps
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
@@ -265,42 +266,29 @@ class CSP(SingleStageDetector):
             if len(samp_list) == 0:
                 if gt_vis_bboxes is not None:
                     losses.update(dict(loss_refine_cls=torch.tensor(0).float().cuda(), loss_refine_bbox=torch.tensor(0).float().cuda(),
-                                        acc=torch.tensor(0).float().cuda()))
+                                        loss_reg=torch.tensor(0).float().cuda(), acc=torch.tensor(0).float().cuda()))
                 else:
-                    losses.update(dict(loss_refine_cls=torch.tensor(0).float().cuda(), acc=torch.tensor(0).float().cuda()))
+                    losses.update(dict(loss_refine_cls=torch.tensor(0).float().cuda(), loss_reg=torch.tensor(0).float().cuda(),
+                                        acc=torch.tensor(0).float().cuda()))
                 return losses
             rois = bbox2roi(samp_list).float()
-            if self.refine_head.loss_opinion is not None:
-                pred_scores = torch.cat([torch.tensor(bbox[:, 4]).float().cuda() for bbox in bbox_list], dim=0)
-                pred_rois = bbox2roi([torch.tensor(bbox).float().cuda() for bbox in bbox_list])
-                pred_feats = self.refine_roi_extractor(
-                    x, pred_rois)
-                pred_scores_refine = self.refine_head(pred_feats)
-                if type(pred_scores_refine) == tuple:
-                    pred_scores_refine = pred_scores_refine[0]
-                loss_opinion = self.refine_head.compute_opinion_loss(pred_scores, pred_scores_refine)
-                losses.update(loss_opinion)
+
             bbox_feats = self.refine_roi_extractor(
                 x, rois)
-            out = self.refine_head(bbox_feats)
-            if gt_vis_bboxes is not None:
+            cls_score, bbox_pred = self.refine_head(bbox_feats)
+            if bbox_pred is not None:
                 bbox_targets = self.refine_head.get_target(
                     sampling_results, gt_vis_bboxes, gt_labels, self.train_cfg.rcnn)
+                loss_refine = self.refine_head.loss(cls_score, bbox_pred, *bbox_targets)
+                losses.update(dict(loss_refine_cls=loss_refine["loss_cls"], loss_refine_bbox=loss_refine["loss_bbox"], acc=loss_refine["acc"]))
             else:
                 bbox_targets = self.refine_head.get_target(
                     sampling_results, gt_bboxes, gt_labels, self.train_cfg.rcnn)
-            if type(out) == tuple:
-                cls_score, bbox_pred = out
-                loss_refine = self.refine_head.loss(cls_score, *bbox_targets[:2], bbox_pred,
-                                                *bbox_targets[2:])
-                losses.update(dict(loss_refine_cls=loss_refine["loss_cls"], loss_refine_bbox=loss_refine["loss_bbox"],
-                                distL1=loss_refine["dist"]))
-            else:
-                cls_score = out
-                loss_refine = self.refine_head.loss(cls_score,
-                                            *bbox_targets[:2])
-                losses.update(dict(loss_refine_cls=loss_refine["loss_cls"], distL1=loss_refine["dist"]))
+                loss_refine = self.refine_head.loss(cls_score, bbox_pred, *bbox_targets)
+                losses.update(dict(loss_refine_cls=loss_refine["loss_cls"], acc=loss_refine["acc"]))
 
+            loss_reg = self.refine_head.compute_reg_loss()
+            losses.update(loss_reg)
         return losses
 
     def simple_test_accuracy(self, img, img_meta):
@@ -315,7 +303,7 @@ class CSP(SingleStageDetector):
 
         roi_feats = self.refine_roi_extractor(
             x, rois)
-        cls_score = self.refine_head.get_scores(roi_feats)
+        cls_score, _ = self.refine_head.get_scores(roi_feats)
 
         return (cls_score > 0.5).float().sum(), rois.size(0)
 

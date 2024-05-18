@@ -105,6 +105,7 @@ class BBoxHead(nn.Module):
              bbox_weights,
              reduction_override=None):
         losses = dict()
+        labels = labels.long()
         if cls_score is not None:
             avg_factor = max(torch.sum(label_weights > 0).float().item(), 1.)
             losses['loss_cls'] = self.loss_cls(
@@ -113,7 +114,7 @@ class BBoxHead(nn.Module):
                 label_weights,
                 avg_factor=avg_factor,
                 reduction_override=reduction_override)
-            losses['acc'] = accuracy(cls_score, labels)
+            losses['acc'] = accuracy(cls_score.view(-1, self.num_classes), labels)
         if bbox_pred is not None:
             pos_inds = labels > 0
             if self.reg_class_agnostic:
