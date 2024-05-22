@@ -82,6 +82,7 @@ class Mean_teacher_Runner(Runner):
         self._iter = 0
         self._inner_iter = 0
         self._max_epochs = 0
+        self._iters_epoch = None
         self._max_iters = 0
 
     def load_teacher_dict_to_model(self):
@@ -228,3 +229,78 @@ class Mean_teacher_Runner(Runner):
             for name, optim in self.optimizer.items():
                 momentums[name] = _get_momentum(optim)
         return momentums
+
+    def train(self, data_loader, **kwargs):
+        self.model.train()
+        self.mode = 'train'
+        self.data_loader = data_loader
+        if self._iters_epoch is not None:
+            self._max_iters = self._max_epochs * self._iters_epoch
+        else:
+            self._max_iters = self._max_epochs * len(data_loader)
+        self.call_hook('before_train_epoch')
+        for i, data_batch in enumerate(data_loader):
+            self._inner_iter = i
+            self.call_hook('before_train_iter')
+            outputs = self.batch_processor(
+                self.model, data_batch, train_mode=True, **kwargs)
+            if not isinstance(outputs, dict):
+                raise TypeError('batch_processor() must return a dict')
+            if 'log_vars' in outputs:
+                self.log_buffer.update(outputs['log_vars'],
+                                       outputs['num_samples'])
+            self.outputs = outputs
+            self.call_hook('after_train_iter')
+            self._iter += 1
+            if self._iters_epoch != None and self._inner_iter >= self._iters_epoch:
+                break
+
+        self.call_hook('after_train_epoch')
+        self._epoch += 1
+
+    def run(self, data_loaders, workflow, max_epochs, iters_epoch=None, **kwargs):
+        """Start running.
+
+        Args:
+            data_loaders (list[:obj:`DataLoader`]): Dataloaders for training
+                and validation.
+            workflow (list[tuple]): A list of (phase, epochs) to specify the
+                running order and epochs. E.g, [('train', 2), ('val', 1)] means
+                running 2 epochs for training and 1 epoch for validation,
+                iteratively.
+            max_epochs (int): Total training epochs.
+        """
+        assert isinstance(data_loaders, list)
+        assert mmcv.is_list_of(workflow, tuple)
+        assert len(data_loaders) == len(workflow)
+
+        self._max_epochs = max_epochs
+        self._iters_epoch = iters_epoch 
+        work_dir = self.work_dir if self.work_dir is not None else 'NONE'
+        self.logger.info('Start running, host: %s, work_dir: %s',
+                         get_host_info(), work_dir)
+        self.logger.info('workflow: %s, max: %d epochs', workflow, max_epochs)
+        self.call_hook('before_run')
+
+        while self.epoch < max_epochs:
+            for i, flow in enumerate(workflow):
+                mode, epochs = flow
+                if isinstance(mode, str):  # self.train()
+                    if not hasattr(self, mode):
+                        raise ValueError(
+                            'runner has no method named "{}" to run an epoch'.
+                            format(mode))
+                    epoch_runner = getattr(self, mode)
+                elif callable(mode):  # custom train()
+                    epoch_runner = mode
+                else:
+                    raise TypeError('mode in workflow must be a str or '
+                                    'callable function, not {}'.format(
+                                        type(mode)))
+                for _ in range(epochs):
+                    if mode == 'train' and self.epoch >= max_epochs:
+                        return
+                    epoch_runner(data_loaders[i], **kwargs)
+
+        time.sleep(1)  # wait for some hooks like loggers to finish
+        self.call_hook('after_run')

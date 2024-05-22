@@ -220,4 +220,5 @@ def _non_dist_train(model, dataset, cfg, validate=False):
         runner.load_checkpoint(cfg.load_from)
     if cfg.mean_teacher:
         runner.load_mean_teacher_checkpoint(cfg)
-    runner.run(data_loaders, cfg.workflow, cfg.total_epochs)
+    iters_epoch = cfg.get('iters_epoch', None)
+    runner.run(data_loaders, cfg.workflow, cfg.total_epochs, iters_epoch)
