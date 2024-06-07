@@ -502,6 +502,7 @@ def random_crop(image, gt_bboxes, gt_vis_bboxes, gt_labels, igs, crop_size, limi
     add_ign = None
     if len(gt_bboxes) > 0:
         ogt_bboxes = np.copy(gt_bboxes)
+        ogt_vis_bboxes = np.copy(gt_vis_bboxes)
         gt_bboxes[:, 0:4:2] -= crop_x1
         gt_bboxes[:, 1:4:2] -= crop_y1
         gt_bboxes[:, 0:4:2] = np.clip(gt_bboxes[:, 0:4:2], 0, crop_w)
@@ -513,9 +514,12 @@ def random_crop(image, gt_bboxes, gt_vis_bboxes, gt_labels, igs, crop_size, limi
 
         before_area = (ogt_bboxes[:, 2] - ogt_bboxes[:, 0]) * (ogt_bboxes[:, 3] - ogt_bboxes[:, 1])
         after_area = (gt_bboxes[:, 2] - gt_bboxes[:, 0]) * (gt_bboxes[:, 3] - gt_bboxes[:, 1])
+        before_area_vis = (ogt_vis_bboxes[:, 2] - ogt_vis_bboxes[:, 0]) * (ogt_vis_bboxes[:, 3] - ogt_vis_bboxes[:, 1])
+        after_area_vis = (gt_vis_bboxes[:, 2] - gt_vis_bboxes[:, 0]) * (gt_vis_bboxes[:, 3] - gt_vis_bboxes[:, 1])
 
         keep_inds = ((gt_bboxes[:, 2] - gt_bboxes[:, 0]) >= limit) & \
-                    (after_area >= 0.5 * before_area)
+                    (after_area >= 0.5 * before_area) & ((gt_vis_bboxes[:, 2] - gt_vis_bboxes[:, 0]) >= limit) & \
+                    (after_area_vis >= 0.5 * before_area_vis)
         ign_inds = np.logical_not(keep_inds)
         add_ign = gt_bboxes[ign_inds]
         gt_bboxes = gt_bboxes[keep_inds]
@@ -552,7 +556,7 @@ def random_pave(image, gt_bboxes, gt_vis_bboxes, gt_labels, igs, pave_size, limi
         gt_bboxes[:, 1:4:2] += pave_y
         gt_vis_bboxes[:, 0:4:2] += pave_x
         gt_vis_bboxes[:, 1:4:2] += pave_y
-        keep_inds = ((gt_bboxes[:, 2] - gt_bboxes[:, 0]) >= limit)
+        keep_inds = ((gt_bboxes[:, 2] - gt_bboxes[:, 0]) >= limit) & ((gt_vis_bboxes[:, 2] - gt_vis_bboxes[:, 0]) >= limit)
         ign_inds = np.logical_not(keep_inds)
         add_ign = gt_bboxes[ign_inds]
         gt_bboxes = gt_bboxes[keep_inds]
